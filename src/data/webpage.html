@@ -198,7 +198,8 @@
 
     if (type === "getData") {
       console.log("Received get data", { content, type });
-      return handleReceivedState(content);
+      const {type, ...data} = content
+      return handleReceivedState(data);
     }
 
     if (availableEvents[type]) availableEvents[type](value);
