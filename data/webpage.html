@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <title>Sala 1307</title>
   <meta http-equiv=”Content-Type” content=”text/html; charset=utf-8″>
@@ -71,11 +72,9 @@
         Adicionar ou remover acesso
       </button>
     </form>
-
-  <h2 id="Loading" style="font-size: 36px; text-align: center; color: #93b1a4">Carregando...</h2>
+    <h2 id="Loading" style="font-size: 36px; text-align: center; color: #93b1a4">Carregando...</h2>
   </span>
 </body>
-
 <script>
   document.getElementById('ProgrammingMode').addEventListener('click', setRegistrationMode);
   document.getElementById('DoorStatus').addEventListener('click', changeDoorStatus);
@@ -106,7 +105,7 @@
   function handleReceivedState(data) {
     const { isDoorOpen, isRegistrationMode } = data;
     console.log("Received system state from Socket: ", { isDoorOpen, isRegistrationMode })
-    
+
     if (isDoorOpen !== undefined && isDoorOpen !== null)
       updateDoorStatusFromSocket(isDoorOpen);
 
@@ -124,7 +123,7 @@
     if (fromSocket) return;
 
     const socketMsg = { type: 'isRegistrationMode', value: true };
-
+    console.log("Sending socket msg for programing mode", { socketMsg })
     sendWebsocketMessage(socketMsg);
   }
 
@@ -135,7 +134,7 @@
     if (fromSocket) return;
 
     const socketMsg = { type: 'isRegistrationMode', value: false };
-
+    console.log("Sending socket msg for programing mode", { socketMsg })
     sendWebsocketMessage(socketMsg);
   }
 
@@ -146,6 +145,7 @@
     if (fromSocket) return;
 
     const socketMsg = { type: 'isDoorOpened', value: true };
+    console.log("Sending socket msg for door status", { socketMsg })
     sendWebsocketMessage(socketMsg);
   }
 
@@ -156,6 +156,7 @@
     if (fromSocket) return;
 
     const socketMsg = { type: 'isDoorOpened', value: false };
+    console.log("Sending socket msg for door status", { socketMsg })
     sendWebsocketMessage(socketMsg);
   }
 
