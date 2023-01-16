@@ -71,6 +71,8 @@
         Cadastrar ou remover cartão
       </button>
     </form>
+
+  <h2 id="Loading" style="font-size: 36px; text-align: center; color: #93b1a4">Carregando...</h2>
   </span>
 </body>
 
@@ -79,7 +81,7 @@
   document.getElementById('DoorStatus').addEventListener('click', changeDoorStatus);
 
   const availableEvents = {
-    isRegistrationMode: setRegistrationMode,
+    isRegistrationMode: updateProgrammingModeFromSocket,
     isDoorOpen: updateDoorStatusFromSocket,
   }
 
@@ -103,13 +105,15 @@
 
   function handleReceivedState(data) {
     const { isDoorOpen, isRegistrationMode } = data;
-    Serial.println("Received status from Socket: ", { isDoorOpen, isRegistrationMode })
+    console.log("Received system state from Socket: ", { isDoorOpen, isRegistrationMode })
     
     if (isDoorOpen !== undefined && isDoorOpen !== null)
       updateDoorStatusFromSocket(isDoorOpen);
 
     if (isRegistrationMode !== undefined && isRegistrationMode !== null)
       updateProgrammingModeFromSocket(isRegistrationMode);
+
+    document.getElementById("Loading")?.remove()
   }
 
   function setRegistrationMode(fromSocket = false) {
@@ -125,7 +129,7 @@
   }
 
   function setReadingMode(fromSocket = false) {
-    document.getElementById('ProgrammingMode').textContent = 'Cadastrar ou remover cartão';
+    document.getElementById('ProgrammingMode').textContent = 'Cadastrar ou remover cart&atildeo';
     document.getElementById('ProgrammingMode').style.backgroundColor = 'rgb(122, 55, 164)';
 
     if (fromSocket) return;
@@ -168,11 +172,12 @@
   }
 
   function requestCurrentStatusFromSocket() {
-    const socketMsg = { type: 'getStatus', value: true };
+    const socketMsg = { type: 'getData', value: true };
     sendWebsocketMessage(socketMsg);
   }
 
   function updateDoorStatusFromSocket(toDoorOpened) {
+    console.log("Updating door opened status to " + toDoorOpened)
     document.getElementById('DoorStatus').disabled = false;
 
     if (toDoorOpened) {
@@ -182,10 +187,11 @@
     }
   }
 
-  function updateProgrammingModeFromSocket(isProgrammingMode) {
+  function updateProgrammingModeFromSocket(isRegistrationMode) {
+    console.log("Updating is registration to " + isRegistrationMode)
     document.getElementById('ProgrammingMode').disabled = false;
 
-    if (isProgrammingMode) {
+    if (isRegistrationMode) {
       setRegistrationMode(true);
     } else {
       setReadingMode(true);
@@ -193,13 +199,12 @@
   }
 
   function processCommand(event) {
-    console.log("Received Event", { event });
     let { type, value, ...content } = JSON.parse(event.data);
+    console.log("Received Websocket Event: ", { type, value, content });
 
     if (type === "getData") {
-      console.log("Received get data", { content, type });
-      const {type, ...data} = content
-      return handleReceivedState(data);
+      console.log("State update event received: ", { content, type });
+      return handleReceivedState(content);
     }
 
     if (availableEvents[type]) availableEvents[type](value);

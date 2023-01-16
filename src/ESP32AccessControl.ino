@@ -74,7 +74,6 @@ void initWebSocket()
 };
 
 void sendCurrentStatus() {
-
   Serial.println("Send Current Status to WEB -> {\"type\":\"getData\",\"isDoorOpen\":false,\"isRegistrationMode\":false\"}");
 
   webSocket.broadcastTXT("{\"type\":\"getData\",\"isDoorOpen\":false,\"isRegistrationMode\":false}");
@@ -86,6 +85,7 @@ void handleValidEvents(String event_type, int event_value)
   {
     Serial.print("Set Registration Mode");
     Serial.println(event_value == 1);
+    // Set isRegistrationMode variable value here
     return;
   }
 
@@ -93,6 +93,7 @@ void handleValidEvents(String event_type, int event_value)
   {
     Serial.print("Set Door Status");
     Serial.println(event_value == 1);
+    // Set isDoorOpen variable value here
     return;
   }
 
