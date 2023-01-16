@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Sala 1307</title>
+</head>
+<style>
+  body {
+    background-color: #404241;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+  }
+
+  span {
+    color: #7ab3ec;
+    font-size: 36px;
+  }
+
+  h1 {
+    text-align: center;
+  }
+
+  h3 {
+    color: #dbdee0;
+    margin-top: 72px;
+    text-align: center;
+  }
+
+  form {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  button {
+    opacity: 1;
+    cursor: pointer;
+    height: 48px;
+    border: none;
+    border-radius: 8px;
+    width: 100%;
+    color: #ffffffff;
+    font-weight: bold;
+    font-size: 18px;
+  }
+
+  button:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  button:hover:enabled {
+    border: 1px solid #001211;
+  }
+</style>
+
+<body>
+  <span>
+    <h1>Sala 1307</h1>
+    <h3>Controle de Acesso</h3>
+    <form>
+      <button id='DoorStatus' type='button' name='DoorStatus' disabled=true
+        style='background-color:#2E8A34;'>ABRIR</button>
+
+      <button id='ProgrammingMode' type='button' disabled=true style='background-color:#7A37A4;'>
+        Cadastrar ou remover cartão
+      </button>
+    </form>
+  </span>
+</body>
+
+<script>
+  document.getElementById('ProgrammingMode').addEventListener('click', setRegistrationMode);
+  document.getElementById('DoorStatus').addEventListener('click', changeDoorStatus);
+
+  const availableEvents = {
+    isRegistrationMode: setRegistrationMode,
+    isDoorOpen: updateDoorStatusFromSocket,
+  }
+
+  let Socket;
+
+  function sendWebsocketMessage(socketMsg) {
+    Socket.send(JSON.stringify(socketMsg));
+  }
+
+  function onWebsocketMessage(event) {
+    processCommand(event);
+  }
+  function onWebsocketOpen() {
+    console.log('WebSocket Connected')
+    requestCurrentStatusFromSocket();
+  }
+  function onWebsocketClose() {
+    console.log('WebSocket Connection lost. Trying to reconnect in 2 seconds!');
+    setTimeout(initWebSocket, 2000);
+  }
+
+  function handleReceivedState(data) {
+    const { isDoorOpen, isRegistrationMode } = data;
+    Serial.println("Received status from Socket: ", { isDoorOpen, isRegistrationMode })
+    
+    if (isDoorOpen !== undefined && isDoorOpen !== null)
+      updateDoorStatusFromSocket(isDoorOpen);
+
+    if (isRegistrationMode !== undefined && isRegistrationMode !== null)
+      updateProgrammingModeFromSocket(isRegistrationMode);
+  }
+
+  function setRegistrationMode(fromSocket = false) {
+    document.getElementById('ProgrammingMode').textContent = 'Cancelar';
+    document.getElementById('ProgrammingMode').style.backgroundColor = 'rgb(6, 9, 19)';
+    window.alert('Aproxime o cartão quando as luzes estiverem piscando');
+
+    if (fromSocket) return;
+
+    const socketMsg = { type: 'isRegistrationMode', value: true };
+
+    sendWebsocketMessage(socketMsg);
+  }
+
+  function setReadingMode(fromSocket = false) {
+    document.getElementById('ProgrammingMode').textContent = 'Cadastrar ou remover cartão';
+    document.getElementById('ProgrammingMode').style.backgroundColor = 'rgb(122, 55, 164)';
+
+    if (fromSocket) return;
+
+    const socketMsg = { type: 'isRegistrationMode', value: false };
+
+    sendWebsocketMessage(socketMsg);
+  }
+
+  function setDoorOpened(fromSocket = false) {
+    document.getElementById('DoorStatus').textContent = 'ABRIR';
+    document.getElementById('DoorStatus').style.backgroundColor = 'rgb(46, 138, 52)';
+
+    if (fromSocket) return;
+
+    const socketMsg = { type: 'isDoorOpened', value: true };
+    sendWebsocketMessage(socketMsg);
+  }
+
+  function setDoorClosed(fromSocket = false) {
+    document.getElementById('DoorStatus').textContent = 'FECHAR';
+    document.getElementById('DoorStatus').style.backgroundColor = 'rgb(184, 75, 61)';
+
+    if (fromSocket) return;
+
+    const socketMsg = { type: 'isDoorOpened', value: false };
+    sendWebsocketMessage(socketMsg);
+  }
+
+  function isDoorOpen() {
+    return document.getElementById('DoorStatus').textContent === 'ABRIR';
+  }
+
+  function changeDoorStatus() {
+    if (isDoorOpen()) {
+      setDoorClosed();
+    } else {
+      setDoorOpened();
+    }
+  }
+
+  function requestCurrentStatusFromSocket() {
+    const socketMsg = { type: 'getStatus', value: true };
+    sendWebsocketMessage(socketMsg);
+  }
+
+  function updateDoorStatusFromSocket(toDoorOpened) {
+    document.getElementById('DoorStatus').disabled = false;
+
+    if (toDoorOpened) {
+      setDoorOpened(true);
+    } else {
+      setDoorClosed(true);
+    }
+  }
+
+  function updateProgrammingModeFromSocket(isProgrammingMode) {
+    document.getElementById('ProgrammingMode').disabled = false;
+
+    if (isProgrammingMode) {
+      setRegistrationMode(true);
+    } else {
+      setReadingMode(true);
+    }
+  }
+
+  function processCommand(event) {
+    console.log("Received Event", { event });
+    let { type, value, ...content } = JSON.parse(event.data);
+
+    if (type === "getData") {
+      console.log("Received get data", { content, type });
+      return handleReceivedState(content);
+    }
+
+    if (availableEvents[type]) availableEvents[type](value);
+  }
+
+  function initWebSocket() {
+    console.log('Trying to initialize websocket connection.');
+    Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
+    Socket.onmessage = onWebsocketMessage;
+    Socket.onclose = onWebsocketClose;
+    Socket.onopen = onWebsocketOpen;
+  }
+
+  window.onload = initWebSocket;
+</script>
+
+</html>
