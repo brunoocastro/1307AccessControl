@@ -34,28 +34,33 @@ void setup()
 void loop()
 {
   webSocket.loop();
-  if(Serial.available()){
-        Serial.println("Available");
-        COMMAND = Serial.readStringUntil('\n');
-         
-        if(COMMAND.equals("door")){
-            IS_DOOR_OPEN = !IS_DOOR_OPEN;
-            Serial.print("New door open status");
-            Serial.println(IS_DOOR_OPEN);
-        }
-        else if(COMMAND.equals("register")){
-            IS_REGISTER_MODE = !IS_REGISTER_MODE;
-            Serial.print("New door open status");
-            Serial.println(IS_REGISTER_MODE);
-        }
-        else if(COMMAND.equals("send")){
-            Serial.println("Sending info:");
-            sendCurrentStatus();
-        }
-        else{
-            Serial.println("Invalid command");
-        }
+  if (Serial.available())
+  {
+    Serial.println("Available");
+    COMMAND = Serial.readStringUntil('\n');
+
+    if (COMMAND.equals("door"))
+    {
+      IS_DOOR_OPEN = !IS_DOOR_OPEN;
+      Serial.print("New door open status");
+      Serial.println(IS_DOOR_OPEN);
     }
+    else if (COMMAND.equals("register"))
+    {
+      IS_REGISTER_MODE = !IS_REGISTER_MODE;
+      Serial.print("New door open status");
+      Serial.println(IS_REGISTER_MODE);
+    }
+    else if (COMMAND.equals("send"))
+    {
+      Serial.println("Sending info:");
+      sendCurrentStatus();
+    }
+    else
+    {
+      Serial.println("Invalid command");
+    }
+  }
 };
 
 void initSPIFFS()
@@ -100,33 +105,33 @@ void initWebSocket()
   webServer.begin();
 };
 
-void sendCurrentStatus() {
+void sendCurrentStatus()
+{
   String currentStatusParsed = String("{\"type\":\"getData\",\"isDoorOpen\":") + IS_DOOR_OPEN + ",\"isRegistrationMode\":" + IS_REGISTER_MODE + "}";
-
 
   Serial.println("Send Current Status to WEB -> " + currentStatusParsed);
 
   webSocket.broadcastTXT(currentStatusParsed);
 };
 
-void handleValidEvents(String event_type, int event_value)
+void handleValidEvents(String Event, bool newStatus)
 {
-  if (event_type == "isRegistrationMode")
+  Serial.println("Handling with event of type: " + Event + " | value: " + newStatus);
+  Serial.println(Event == "isDoorOpen");
+
+  if (Event == "isRegistrationMode")
   {
     Serial.print("Set Registration Mode");
-    Serial.println(event_value);
+    Serial.println(newStatus);
 
-    IS_REGISTER_MODE = event_value;
-    return;
+    IS_REGISTER_MODE = newStatus;
   }
-
-  if (event_type == "isDoorOpen")
+  else if (Event == "isDoorOpen")
   {
-    Serial.print("Set Door Status");
-    Serial.println(event_value == 1);
-    
-    IS_DOOR_OPEN = event_value;
-    return;
+    Serial.println("Set Door Status to :" + String(newStatus) + " | " + (newStatus == 1) + " | " + String(newStatus == true));
+    Serial.println(newStatus == 1, newStatus);
+
+    IS_DOOR_OPEN = newStatus;
   }
 
   sendCurrentStatus();
@@ -153,11 +158,8 @@ void onWebSocketEvent(byte clientId, WStype_t eventType, uint8_t *payload, size_
       return;
     }
 
-    const char *event_type = doc["eventType"];
-    const int event_value = doc["value"];
-
-    Serial.println("Type: " + String(event_type));
-    Serial.println("Value: " + String(event_value));
+    const char *event_type = doc["type"];
+    bool event_value = doc["value"];
 
     handleValidEvents(String(event_type), event_value);
   };

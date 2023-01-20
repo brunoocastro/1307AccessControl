@@ -7,6 +7,22 @@ const Socket = new Server({ port: 81 });
 let IS_DOOR_OPEN = false;
 let IS_REGISTER_MODE = false;
 
+function getCurrentStatus() {
+  return JSON.stringify({
+    type: "getData",
+    isDoorOpen: IS_DOOR_OPEN,
+    isRegistrationMode: IS_REGISTER_MODE,
+  });
+}
+
+function updateToAll() {
+  const newData = getCurrentStatus();
+  console.log("Sending new data", { newData });
+  Socket.clients.forEach((client) => {
+    client.send(newData);
+  });
+}
+
 Socket.on("connection", (ws) => {
   console.log("New client connected");
 
@@ -16,21 +32,20 @@ Socket.on("connection", (ws) => {
 
     switch (messageData.type) {
       case "getData":
-        console.log("Solicitando dados.");
-        const data = JSON.stringify({
-          type: "getData",
-          isDoorOpen: IS_DOOR_OPEN,
-          isRegistrationMode: IS_REGISTER_MODE,
-        });
+        const data = getCurrentStatus();
+        console.log("Solicitando dados.", { data });
         ws.send(data);
         break;
       case "isRegistrationMode":
-        IS_REGISTER_MODE = Boolean(message.value);
-        console.log("IS_REGISTER_MODE: ", IS_REGISTER_MODE);
+        IS_REGISTER_MODE = Boolean(messageData.value);
+        console.log("IS_REGISTER_MODE: ", IS_REGISTER_MODE, messageData.value);
+        updateToAll();
         break;
       case "isDoorOpen":
-        IS_DOOR_OPEN = Boolean(message.value);
-        console.log("IS_DOOR_OPEN: ", IS_DOOR_OPEN);
+        IS_DOOR_OPEN = Boolean(messageData.value);
+        console.log("IS_DOOR_OPEN: ", IS_DOOR_OPEN), messageData.value;
+      
+        updateToAll();
         break;
     }
   });

@@ -156,18 +156,14 @@
   }
 
   function setRegistrationMode(fromSocket = false) {
-    setRegisterButton()
-
     const socketMsg = { type: 'isRegistrationMode', value: true };
     console.log("Sending socket msg for programing mode", { socketMsg })
     sendWebsocketMessage(socketMsg);
   }
 
   function setReadingMode() {
-    setReadingButton()
-
     const socketMsg = { type: 'isRegistrationMode', value: false };
-    console.log("Sending socket msg for programing mode", { socketMsg })
+    console.log("Sending socket msg for reading mode", { socketMsg })
     sendWebsocketMessage(socketMsg);
   }
 
@@ -181,24 +177,20 @@
   }
 
   function setDoorClosed() {
-    setDoorButtonClosed();
-
-    const socketMsg = { type: 'isDoorOpened', value: false };
+    const socketMsg = { type: 'isDoorOpen', value: false };
     console.log("Sending socket msg for door status", { socketMsg })
     sendWebsocketMessage(socketMsg);
   }
 
   function setDoorOpened() {
-    setDoorButtonOpened()
-
-    const socketMsg = { type: 'isDoorOpened', value: true };
+    const socketMsg = { type: 'isDoorOpen', value: true };
     console.log("Sending socket msg for door status", { socketMsg })
     sendWebsocketMessage(socketMsg);
   }
 
   function changeDoorStatus() {
     const isDoorOpen = document.getElementById('DoorStatus').textContent.toUpperCase() === 'FECHAR'.toUpperCase()
-    console.log("[HTML] - Changing door status to: ", isDoorOpen)
+    console.log("[HTML] - Changing door status to: ", !isDoorOpen)
     if (isDoorOpen) {
       setDoorClosed();
     } else {
@@ -208,7 +200,7 @@
 
   function changeProgrammingMode() {
     const isRegistrationMode = document.getElementById('ProgrammingMode').textContent.toUpperCase() === 'Cancelar'.toUpperCase();
-    console.log("[HTML] - Changing register mode to: ", isRegistrationMode)
+    console.log("[HTML] - Changing register mode to: ", !isRegistrationMode)
     document.getElementById('ProgrammingMode').disabled = false;
 
     if (isRegistrationMode) {
@@ -223,11 +215,11 @@
     sendWebsocketMessage(socketMsg);
   }
 
-  function updateDoorStatusFromSocket(isDoorOpened) {
-    console.log("[WS] - Updating door opened status to " + isDoorOpened)
+  function updateDoorStatusFromSocket(isDoorOpen) {
+    console.log("[WS] - Updating door opened status to " + isDoorOpen)
     document.getElementById('DoorStatus').disabled = false;
 
-    if (isDoorOpened) {
+    if (isDoorOpen) {
       setDoorButtonOpened()
     } else {
       setDoorButtonClosed()
@@ -263,10 +255,12 @@
     Socket.onmessage = onWebsocketMessage;
     Socket.onclose = onWebsocketClose;
     Socket.onopen = onWebsocketOpen;
+
+    document.getElementById('ProgrammingMode').addEventListener('click', () => changeProgrammingMode());
+    document.getElementById('DoorStatus').addEventListener('click', () => changeDoorStatus());
   }
 
-  document.getElementById('ProgrammingMode').addEventListener('click', () => changeProgrammingMode());
-  document.getElementById('DoorStatus').addEventListener('click', () => changeDoorStatus());
+
 
   window.onload = initWebSocket;
 
