@@ -16,11 +16,18 @@
 
   span {
     color: #7ab3ec;
-    font-size: 36px;
+    width: 40%;
   }
 
   h1 {
     text-align: center;
+  }
+
+  h2 {
+    word-break: normal;
+    font-size: 36px;
+    text-align: center;
+    color: '#93b1a4';
   }
 
   h3 {
@@ -65,19 +72,52 @@
     <h1>Sala 1307</h1>
     <h3>Controle de Acesso</h3>
     <form>
-      <button id='DoorStatus' type='button' name='DoorStatus' disabled=true
+      <button id='DoorStatus' type='button' name='DoorStatus' disabled=false
         style='background-color:#2E8A34;'>ABRIR</button>
 
-      <button id='ProgrammingMode' type='button' disabled=true style='background-color:#7A37A4;'>
+      <button id='ProgrammingMode' type='button' disabled=false style='background-color:#7A37A4;'>
         Adicionar ou remover acesso
       </button>
     </form>
-    <h2 id="Loading" style="font-size: 36px; text-align: center; color: #93b1a4">Carregando...</h2>
+    <h2 id="Loading">Carregando...</h2>
+    <h2 id="RegisteringText" style="opacity: 0;">
+      Aproxime uma tag quando as luzes estiverem piscando!
+    </h2>
+    <h2 id="RegisteringTextOBS" style="opacity: 0; color:#e9b361; font-size: 24px;">
+      OBS:
+      </br>
+      Caso seja uma nova tag, ela será cadastrada.
+      </br>
+      Se já estiver registrada será removida.
+    </h2>
   </span>
 </body>
 <script>
-  document.getElementById('ProgrammingMode').addEventListener('click', setRegistrationMode);
-  document.getElementById('DoorStatus').addEventListener('click', changeDoorStatus);
+  const HOST = !!window?.location?.hostname ? window?.location?.hostname : "localhost"
+  console.log({ HOST })
+
+
+  function setReadingButton() {
+    document.getElementById('Loading').style.opacity = '0';
+    document.getElementById('RegisteringText').style.opacity = '0';
+    document.getElementById('RegisteringTextOBS').style.opacity = '0';
+
+    document.getElementById('DoorStatus').disabled = false;
+
+    document.getElementById('ProgrammingMode').textContent = 'Cadastrar ou remover acesso';
+    document.getElementById('ProgrammingMode').style.backgroundColor = 'rgb(122, 55, 164)';
+  }
+
+  function setRegisterButton() {
+    document.getElementById('Loading').style.opacity = '0';
+    document.getElementById('RegisteringText').style.opacity = '1';
+    document.getElementById('RegisteringTextOBS').style.opacity = '1';
+
+    document.getElementById('DoorStatus').disabled = true;
+
+    document.getElementById('ProgrammingMode').textContent = 'Cancelar';
+    document.getElementById('ProgrammingMode').style.backgroundColor = 'rgb(6, 9, 19)';
+  }
 
   const availableEvents = {
     isRegistrationMode: updateProgrammingModeFromSocket,
@@ -102,9 +142,9 @@
     setTimeout(initWebSocket, 2000);
   }
 
-  function handleReceivedState(data) {
+  function handleReceivedStateFromSocket(data) {
     const { isDoorOpen, isRegistrationMode } = data;
-    console.log("Received system state from Socket: ", { isDoorOpen, isRegistrationMode })
+    console.log("[WS] - Received system state from Socket: ", { isDoorOpen, isRegistrationMode })
 
     if (isDoorOpen !== undefined && isDoorOpen !== null)
       updateDoorStatusFromSocket(isDoorOpen);
@@ -112,63 +152,69 @@
     if (isRegistrationMode !== undefined && isRegistrationMode !== null)
       updateProgrammingModeFromSocket(isRegistrationMode);
 
-    document.getElementById("Loading")?.remove()
+    document.getElementById("Loading").style.display = 'none';
   }
 
   function setRegistrationMode(fromSocket = false) {
-    document.getElementById('ProgrammingMode').textContent = 'Cancelar';
-    document.getElementById('ProgrammingMode').style.backgroundColor = 'rgb(6, 9, 19)';
-    window.alert('Aproxime o cartao quando as luzes estiverem piscando!');
-
-    if (fromSocket) return;
+    setRegisterButton()
 
     const socketMsg = { type: 'isRegistrationMode', value: true };
     console.log("Sending socket msg for programing mode", { socketMsg })
     sendWebsocketMessage(socketMsg);
   }
 
-  function setReadingMode(fromSocket = false) {
-    document.getElementById('ProgrammingMode').textContent = 'Cadastrar ou remover acesso';
-    document.getElementById('ProgrammingMode').style.backgroundColor = 'rgb(122, 55, 164)';
-
-    if (fromSocket) return;
+  function setReadingMode() {
+    setReadingButton()
 
     const socketMsg = { type: 'isRegistrationMode', value: false };
     console.log("Sending socket msg for programing mode", { socketMsg })
     sendWebsocketMessage(socketMsg);
   }
 
-  function setDoorOpened(fromSocket = false) {
-    document.getElementById('DoorStatus').textContent = 'ABRIR';
-    document.getElementById('DoorStatus').style.backgroundColor = 'rgb(46, 138, 52)';
-
-    if (fromSocket) return;
-
-    const socketMsg = { type: 'isDoorOpened', value: true };
-    console.log("Sending socket msg for door status", { socketMsg })
-    sendWebsocketMessage(socketMsg);
-  }
-
-  function setDoorClosed(fromSocket = false) {
+  function setDoorButtonOpened() {
     document.getElementById('DoorStatus').textContent = 'FECHAR';
     document.getElementById('DoorStatus').style.backgroundColor = 'rgb(184, 75, 61)';
+  }
+  function setDoorButtonClosed() {
+    document.getElementById('DoorStatus').textContent = 'ABRIR';
+    document.getElementById('DoorStatus').style.backgroundColor = 'rgb(46, 138, 52)';
+  }
 
-    if (fromSocket) return;
+  function setDoorClosed() {
+    setDoorButtonClosed();
 
     const socketMsg = { type: 'isDoorOpened', value: false };
     console.log("Sending socket msg for door status", { socketMsg })
     sendWebsocketMessage(socketMsg);
   }
 
-  function isDoorOpen() {
-    return document.getElementById('DoorStatus').textContent === 'ABRIR';
+  function setDoorOpened() {
+    setDoorButtonOpened()
+
+    const socketMsg = { type: 'isDoorOpened', value: true };
+    console.log("Sending socket msg for door status", { socketMsg })
+    sendWebsocketMessage(socketMsg);
   }
 
   function changeDoorStatus() {
-    if (isDoorOpen()) {
+    const isDoorOpen = document.getElementById('DoorStatus').textContent.toUpperCase() === 'FECHAR'.toUpperCase()
+    console.log("[HTML] - Changing door status to: ", isDoorOpen)
+    if (isDoorOpen) {
       setDoorClosed();
     } else {
       setDoorOpened();
+    }
+  }
+
+  function changeProgrammingMode() {
+    const isRegistrationMode = document.getElementById('ProgrammingMode').textContent.toUpperCase() === 'Cancelar'.toUpperCase();
+    console.log("[HTML] - Changing register mode to: ", isRegistrationMode)
+    document.getElementById('ProgrammingMode').disabled = false;
+
+    if (isRegistrationMode) {
+      setReadingMode();
+    } else {
+      setRegistrationMode();
     }
   }
 
@@ -177,35 +223,35 @@
     sendWebsocketMessage(socketMsg);
   }
 
-  function updateDoorStatusFromSocket(toDoorOpened) {
-    console.log("Updating door opened status to " + toDoorOpened)
+  function updateDoorStatusFromSocket(isDoorOpened) {
+    console.log("[WS] - Updating door opened status to " + isDoorOpened)
     document.getElementById('DoorStatus').disabled = false;
 
-    if (toDoorOpened) {
-      setDoorOpened(true);
+    if (isDoorOpened) {
+      setDoorButtonOpened()
     } else {
-      setDoorClosed(true);
+      setDoorButtonClosed()
     }
   }
 
   function updateProgrammingModeFromSocket(isRegistrationMode) {
-    console.log("Updating is registration to " + isRegistrationMode)
+    console.log("[WS] - Updating is registration to: " + isRegistrationMode)
     document.getElementById('ProgrammingMode').disabled = false;
 
     if (isRegistrationMode) {
-      setRegistrationMode(true);
+      setRegisterButton();
     } else {
-      setReadingMode(true);
+      setReadingButton();
     }
   }
 
   function processCommand(event) {
     let { type, value, ...content } = JSON.parse(event.data);
-    console.log("Received Websocket Event: ", { type, value, content });
+    // console.log("[WS] - Received Event: ", { type, value, content });
 
     if (type === "getData") {
-      console.log("State update event received: ", { content, type });
-      return handleReceivedState(content);
+      // console.log("[WS] - State update event received: ", { content, type });
+      return handleReceivedStateFromSocket(content);
     }
 
     if (availableEvents[type]) availableEvents[type](value);
@@ -213,13 +259,19 @@
 
   function initWebSocket() {
     console.log('Trying to initialize websocket connection.');
-    Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
+    Socket = new WebSocket('ws://' + HOST + ':81/');
     Socket.onmessage = onWebsocketMessage;
     Socket.onclose = onWebsocketClose;
     Socket.onopen = onWebsocketOpen;
   }
 
+  document.getElementById('ProgrammingMode').addEventListener('click', () => changeProgrammingMode());
+  document.getElementById('DoorStatus').addEventListener('click', () => changeDoorStatus());
+
   window.onload = initWebSocket;
+
+  console.log({ isRegistrationMode, isDoorOpen })
+
 </script>
 
 </html>

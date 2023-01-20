@@ -14,6 +14,11 @@ IPAddress subnet(255, 255, 255, 0);
 AsyncWebServer webServer(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 
+bool IS_DOOR_OPEN = false;
+bool IS_REGISTER_MODE = false;
+
+String COMMAND;
+
 void setup()
 {
   Serial.begin(115200);
@@ -29,6 +34,28 @@ void setup()
 void loop()
 {
   webSocket.loop();
+  if(Serial.available()){
+        Serial.println("Available");
+        COMMAND = Serial.readStringUntil('\n');
+         
+        if(COMMAND.equals("door")){
+            IS_DOOR_OPEN = !IS_DOOR_OPEN;
+            Serial.print("New door open status");
+            Serial.println(IS_DOOR_OPEN);
+        }
+        else if(COMMAND.equals("register")){
+            IS_REGISTER_MODE = !IS_REGISTER_MODE;
+            Serial.print("New door open status");
+            Serial.println(IS_REGISTER_MODE);
+        }
+        else if(COMMAND.equals("send")){
+            Serial.println("Sending info:");
+            sendCurrentStatus();
+        }
+        else{
+            Serial.println("Invalid command");
+        }
+    }
 };
 
 void initSPIFFS()
@@ -74,9 +101,12 @@ void initWebSocket()
 };
 
 void sendCurrentStatus() {
-  Serial.println("Send Current Status to WEB -> {\"type\":\"getData\",\"isDoorOpen\":false,\"isRegistrationMode\":false\"}");
+  String currentStatusParsed = String("{\"type\":\"getData\",\"isDoorOpen\":") + IS_DOOR_OPEN + ",\"isRegistrationMode\":" + IS_REGISTER_MODE + "}";
 
-  webSocket.broadcastTXT("{\"type\":\"getData\",\"isDoorOpen\":false,\"isRegistrationMode\":false}");
+
+  Serial.println("Send Current Status to WEB -> " + currentStatusParsed);
+
+  webSocket.broadcastTXT(currentStatusParsed);
 };
 
 void handleValidEvents(String event_type, int event_value)
@@ -84,8 +114,9 @@ void handleValidEvents(String event_type, int event_value)
   if (event_type == "isRegistrationMode")
   {
     Serial.print("Set Registration Mode");
-    Serial.println(event_value == 1);
-    // Set isRegistrationMode variable value here
+    Serial.println(event_value);
+
+    IS_REGISTER_MODE = event_value;
     return;
   }
 
@@ -93,7 +124,8 @@ void handleValidEvents(String event_type, int event_value)
   {
     Serial.print("Set Door Status");
     Serial.println(event_value == 1);
-    // Set isDoorOpen variable value here
+    
+    IS_DOOR_OPEN = event_value;
     return;
   }
 
