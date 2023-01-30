@@ -14,10 +14,10 @@
 #define ledRed 13   // Led vermelho no pino 3
 #define relePin 12
 
-MFRC522 mfrc522(SDA_RFID, RST_RFID); // Inicializa o módulo RFID
-MemoryLib memory(1, 2);              // Inicializa a biblioteca MemoryLib. Parametros: memorySize=1 (1Kb) / type=2 (LONG)
-int maxCards = 101;                  // Cada cartão ocupa duas posições na memória. Para 1Kb será permitido o cadastro de 101 cartões
-String cards[101] = {};              // Array com os cartões cadastrados
+MFRC522 mfrc522(SDA_RFID, RST_RFID);   // Inicializa o módulo RFID
+MemoryLib memory(1, 2);                // Inicializa a biblioteca MemoryLib. Parametros: memorySize=1 (1Kb) / type=2 (LONG)
+int maxCards = memory.lastAddress / 2; // Cada cartão ocupa duas posições na memória. Para 1Kb será permitido o cadastro de 101 cartões
+String cards[101] = {};                // Array com os cartões cadastrados
 
 String UID = "";
 
@@ -31,7 +31,7 @@ IPAddress subnet(255, 255, 255, 0);
 AsyncWebServer webServer(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 
-bool IS_DOOR_OPEN = false;
+bool IS_DOOR_OPEN = true;
 bool IS_REGISTER_MODE = false;
 
 String COMMAND;
@@ -91,6 +91,10 @@ void initRFID()
   pinMode(ledRed, OUTPUT);
   pinMode(relePin, OUTPUT);
 
+  digitalWrite(ledGreen, LOW);
+  digitalWrite(ledRed, LOW);
+  digitalWrite(relePin, LOW);
+
   // Inicia SPI
   SPI.begin();
 
@@ -98,12 +102,12 @@ void initRFID()
   mfrc522.PCD_Init();
 
   // Retorna os cartões armazenados na memória EEPROM para o array
-  ReadMemory();
+  UpdateLocalCardsFromMemory();
 
   //! DEBUG -> Deletar as linhas abaixo: Elas forçam a adição das tags no array
-  memory.write(0, long(14534186121));
-  cards[0] = String(14534186121);
-  Serial.println("CARD:" + cards[0]);
+  // memory.write(0, long(14534186121));
+  // cards[0] = String(14534186121);
+  // Serial.println("CARD:" + cards[0]);
 
   // Pisca os leds sinalizando a inicialização do circuito
   for (int i = 0; i < 10; i++)
@@ -132,14 +136,8 @@ void initAccessPoint()
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
 
-  delay(1000);
-  Serial.println("Mode: " + WiFi.getMode());
-
   delay(500);
   WiFi.mode(WIFI_AP);
-
-  delay(1000);
-  Serial.println("Mode: " + WiFi.getMode());
 
   Serial.print("Starting Access Point ... ");
   Serial.println(WiFi.softAP(accessPointSSID, accessPointPassword) ? "Ready" : "Failed!");
@@ -183,14 +181,10 @@ void sendCurrentStatus()
 
 void handleValidEvents(String Event, bool newStatus)
 {
-  Serial.println("Handling with event of type: " + Event + " | value: " + newStatus);
-  Serial.println(Event == "isDoorOpen");
+  Serial.println("Handling with event of type: " + Event + " with value: " + newStatus);
 
   if (Event == "isRegistrationMode")
   {
-    Serial.print("Set Registration Mode");
-    Serial.println(newStatus);
-
     if (newStatus == true)
     {
       setProgrammingState();
@@ -202,9 +196,6 @@ void handleValidEvents(String Event, bool newStatus)
   }
   else if (Event == "isDoorOpen")
   {
-    Serial.println("Set Door Status to :" + String(newStatus) + " | " + (newStatus == 1) + " | " + String(newStatus == true));
-    Serial.println(newStatus == 1, newStatus);
-
     if (newStatus == true)
     {
       setDoorOpen();
@@ -213,9 +204,9 @@ void handleValidEvents(String Event, bool newStatus)
     {
       setDoorClosed();
     }
+  } else if (Event == "getData") {
+    sendCurrentStatus();
   }
-
-  sendCurrentStatus();
 };
 
 void onWebSocketEvent(byte clientId, WStype_t eventType, uint8_t *payload, size_t length)
@@ -246,17 +237,21 @@ void onWebSocketEvent(byte clientId, WStype_t eventType, uint8_t *payload, size_
   };
 };
 
-void ReadMemory()
+void UpdateLocalCardsFromMemory()
 {
-  int a = 0;
-  for (int c = 0; c < maxCards; c++)
-  {
-    cards[c] = String(memory.read(a)) + String(memory.read(a + 1));
-    a += 2;
+  int memPos = 0;
+  for (int iter = 0; iter < maxCards; iter++)
+  { 
+    Serial.println(memory.read(memPos));
+    Serial.println(memory.read(memPos + 1));
+    String readUID = String(memory.read(memPos)) + String(memory.read(memPos + 1));
+    Serial.println("[UPDATING HERE MEM] UID: " + readUID + " | POS: " + iter);
+    cards[iter] = readUID;
+    memPos += 2;
   }
 }
 
-void ReadCard()
+void ReadCardUID()
 {
   UID = "";
   // Verifica a presença de um novo cartao e efetua a leitura
@@ -267,6 +262,7 @@ void ReadCard()
     {
       UID += String(mfrc522.uid.uidByte[i]);
     }
+    Serial.println("[READ] Card Readed with UID: " + String(UID));
   }
 }
 
@@ -274,12 +270,16 @@ void setProgrammingState()
 {
   Serial.println("[PROGRAMMING] Changed to Programming state!");
   IS_REGISTER_MODE = true;
+  sendCurrentStatus();
+  delay(350);
 }
 
 void setReadingState()
 {
   Serial.println("[PROGRAMMING] Changed to Reading state!");
   IS_REGISTER_MODE = false;
+  sendCurrentStatus();
+  delay(350);
 }
 
 void setDoorOpen()
@@ -287,7 +287,9 @@ void setDoorOpen()
   Serial.println("[UNLOCK] Door is OPEN now!");
   digitalWrite(relePin, HIGH);
   IS_DOOR_OPEN = true;
-  delay(1000);
+
+  sendCurrentStatus();
+  delay(350);
 }
 
 void setDoorClosed()
@@ -295,7 +297,9 @@ void setDoorClosed()
   Serial.println("[UNLOCK] Door is CLOSED now!");
   digitalWrite(relePin, LOW);
   IS_DOOR_OPEN = false;
-  delay(1000);
+
+  sendCurrentStatus();
+  delay(350);
 }
 
 void setOpenLight()
@@ -326,6 +330,7 @@ void ManageLightMode(bool isDoorOpen, bool isProgrammingMode)
   {
     return setProgrammingLight();
   }
+
   if (!isDoorOpen)
   {
     return setClosedLight();
@@ -344,16 +349,19 @@ void ManageDoorMode(bool isProgrammingMode)
 
 void handleReadingMode()
 {
+  // Serial.println("Tentando LER");
   // Variável UID recebe o valor do cartão lido
-  ReadCard();
+  ReadCardUID();
 
   if (UID != "")
   {
     boolean canAccess = false;
+    Serial.println("[ACCESS] Trying to change door state with card UID: " + String(UID));
     // Efetua a leitura de todas as posições do array
     for (int c = 0; c < maxCards; c++)
     {
-      Serial.println("Card " + cards[c] + " | " + String(UID) + " | " + String(cards[c]));
+      if (cards[c] != 00)
+        Serial.println("Card " + cards[c] + " | " + String(UID) + " | " + String(cards[c]));
       if (UID == cards[c])
       {
         Serial.println("ID da memória:" + cards[c]);
@@ -366,20 +374,24 @@ void handleReadingMode()
     if (canAccess)
     {
       Unlock();
+      canAccess = false;
     }
     else
     {
       for (int i = 0; i < 6; i++)
       {
+        digitalWrite(ledGreen, LOW);
         digitalWrite(ledRed, HIGH);
-        delay(50);
+        delay(150);
         digitalWrite(ledRed, LOW);
-        delay(50);
+        delay(150);
+        digitalWrite(ledRed, HIGH);
+        delay(150);
+        digitalWrite(ledRed, LOW);
+        delay(150);
       }
       delay(500);
     }
-
-    canAccess = false;
   }
 }
 
@@ -396,8 +408,8 @@ void Unlock()
 
 void handleProgrammingMode()
 {
-  String UID = "";
-  boolean deleteCard = false;
+  UID = "";
+  boolean isDeleteCard = false;
 
   // Efetua a leitura do cartao para cadastro
   // Aprox 5 segundos para cadastrar o cartao
@@ -405,86 +417,84 @@ void handleProgrammingMode()
   for (int t = 0; t < 150; t++)
   {
     delay(10);
-    // Acende os leds verde e vermelho
+
     digitalWrite(ledGreen, HIGH);
     digitalWrite(ledRed, HIGH);
-    // Faz a leitura o cartao
-    ReadCard();
+
+    ReadCardUID();
     if (UID != "")
     {
       // Se leu um cartão, mantém somente o led verde acesso enquanto segue executando o procedimento
       digitalWrite(ledRed, LOW);
       Serial.println("[REGISTER] Cartão encontrado com ID: " + UID);
       // Verifica se o cartao ja esta cadastrado
-      for (int c = 0; c < maxCards; c++)
+      for (int iter = 0; iter < maxCards; iter++)
       {
         // Se já estiver cadastrado, exclui o cartão do array e também da memória
-        if (cards[c] == UID)
+        if (cards[iter] == UID)
         {
-          digitalWrite(ledRed, HIGH);
           digitalWrite(ledGreen, LOW);
-          cards[c] = "0";
-          deleteCard = true;
+          digitalWrite(ledRed, HIGH);
+          delay(150);
+          digitalWrite(ledRed, LOW);
+          delay(150);
+          digitalWrite(ledRed, HIGH);
+          cards[iter] = "0";
+          isDeleteCard = true;
         }
       }
-      break; // finaliza o for
+      break;
     }
   }
 
-  // Cancela o cadastro se nenhum cartao foi lido
   if (UID == "")
   {
-    // Apaga os leds verde e vermelho
+    Serial.println("[REGISTER] Nenhum cartão aproximado para o cadastro.\nRetornando ao modo leitura!");
     digitalWrite(ledGreen, LOW);
     digitalWrite(ledRed, LOW);
+    setReadingState();
     return;
   }
 
-  if (deleteCard == false)
+  if (isDeleteCard == false)
   {
     // Se for inclusão de novo cartão, verifica se ainda existe espaco para novos cadastros
     // Se a última posição da memória for diferente de zero, pisca o led vermelho sinalizando
     // que não existe mais espaço para novos cartões, e finaliza o procedimento
-    if (cards[maxCards - 1].toInt() != 0)
-    {
-      Serial.println("[REGISTER] Memória CHEIA");
-      digitalWrite(ledGreen, LOW);
-      for (int i = 0; i < 10; i++)
-      {
-        digitalWrite(ledRed, HIGH);
-        delay(100);
-        digitalWrite(ledRed, LOW);
-        delay(100);
-      }
+    if (hasNoMemorySpace())
       return;
-    }
-  }
 
-  // Adiciona o cartão no array, somente se for inclusão de novo cartão
-  if (deleteCard == false)
-  {
-    Serial.println("[REGISTER] Adicionando cartão a memória");
-    for (int c = 0; c < maxCards; c++)
+    Serial.println("[REGISTER] Adding new access to local register");
+    for (int cleanMemPosition = 0; cleanMemPosition < maxCards; cleanMemPosition++)
     {
-      if (cards[c].toInt() == 0)
+      if (cards[cleanMemPosition].toInt() == 0)
       { // Posicao livre
-        cards[c] = UID;
+        Serial.println("[EEPROM] Saving new card of UID " + String(UID) + " in memory position " + cleanMemPosition);
+        cards[cleanMemPosition] = UID;
+
         break; // finaliza o for
       }
     }
+    printAllCards();
   }
 
   // Grava na memória os cartões do array
   // Cada cartão ocupa duas posições da memória
-  for (int e = 0; e <= memory.lastAddress; e++)
+  for (int iter = 0; iter <= memory.lastAddress; iter++)
   { // Limpa os valores da memória
-    memory.write(e, 0);
+    memory.write(iter, 0);
   }
+
+  Serial.println("[EEPROM] Memory cleaned!");
+
   int a = 0;
   for (int c = 0; c < maxCards; c++)
   {
     if (cards[c].toInt() != 0)
     {
+      Serial.println("Card " + UID + " | space " + c);
+      Serial.println("POS1 " + String(cards[c].substring(0, 6).toInt()));
+      Serial.println("POS2 " + String(cards[c].substring(6, cards[c].length()).toInt()) + "\n");
       memory.write(a, cards[c].substring(0, 6).toInt());
       memory.write(a + 1, cards[c].substring(6, cards[c].length()).toInt());
       a += 2;
@@ -492,11 +502,19 @@ void handleProgrammingMode()
   }
 
   // Retorna os valores da memória para o array, para ajustar as posições do cartão no array como está na memória
-  ReadMemory();
+  // UpdateLocalCardsFromMemory();
 
-  if (deleteCard == false)
+  if (isDeleteCard == false)
   {
-    Unlock();
+    digitalWrite(ledGreen, LOW);
+    delay(150);
+    digitalWrite(ledGreen, HIGH);
+    delay(150);
+    digitalWrite(ledGreen, LOW);
+    delay(150);
+    digitalWrite(ledGreen, HIGH);
+    delay(150);
+    digitalWrite(ledGreen, LOW);
   }
   else
   {
@@ -504,4 +522,44 @@ void handleProgrammingMode()
     digitalWrite(ledGreen, LOW);
     digitalWrite(ledRed, LOW);
   }
+}
+
+bool hasNoMemorySpace()
+{
+  if (cards[maxCards - 1].toInt() != 0)
+  {
+    Serial.println("[REGISTER] Memória CHEIA");
+    digitalWrite(ledGreen, LOW);
+    for (int i = 0; i < 10; i++)
+    {
+      digitalWrite(ledRed, HIGH);
+      delay(100);
+      digitalWrite(ledRed, LOW);
+      delay(100);
+      digitalWrite(ledRed, HIGH);
+      delay(100);
+      digitalWrite(ledRed, LOW);
+      delay(100);
+      digitalWrite(ledRed, HIGH);
+      delay(100);
+      digitalWrite(ledRed, LOW);
+      delay(100);
+    }
+    return true;
+  }
+  return false;
+}
+
+void printAllCards()
+{
+  int founded = 0;
+  for (int memPosition = 0; memPosition < maxCards; memPosition++)
+  {
+    if (cards[memPosition].toInt() != 0)
+    {
+      founded += 1;
+      Serial.println("[LOCALMEM] Card founded in position" + String(memPosition) + " with ID " + cards[memPosition]);
+    }
+  }
+  Serial.println("[LOCALMEM] Founded Cards: " + founded);
 }

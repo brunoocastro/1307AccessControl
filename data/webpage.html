@@ -134,11 +134,13 @@
     processCommand(event);
   }
   function onWebsocketOpen() {
-    console.log('WebSocket Connected')
+    console.log('[WS] -> Connected successfully!')
     requestCurrentStatusFromSocket();
   }
   function onWebsocketClose() {
-    console.log('WebSocket Connection lost. Trying to reconnect in 2 seconds!');
+    console.log('[WS] -> Connection lost. Trying to reconnect in 2 seconds!');
+    document.getElementById('DoorStatus').disabled = true;
+    document.getElementById('ProgrammingMode').disabled = true;
     setTimeout(initWebSocket, 2000);
   }
 
