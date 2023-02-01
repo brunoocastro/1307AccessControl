@@ -76,7 +76,9 @@ void initRFID()
 
   CardReader.PCD_Init();
 
-  UpdateLocalCardsFromMemory();
+  delay(500);
+
+  UpdateLocalCardsFromFile();
 
   for (int i = 0; i < 10; i++)
   {
@@ -93,7 +95,7 @@ void initSPIFFS()
 {
   if (!SPIFFS.begin())
   {
-    Serial.println("Cannot mount SPIFFS volume... Restarting in 5 seconds!");
+    Serial.println("[SPIFFS] Cannot mount SPIFFS volume... Restarting in 5 seconds!");
     delay(5000);
     return ESP.restart();
   }
@@ -118,14 +120,14 @@ void initAccessPoint()
   delay(500);
   WiFi.mode(WIFI_AP);
 
-  Serial.print("Starting Access Point ... ");
+  Serial.print("[WIFI] Starting Access Point ... ");
   Serial.println(WiFi.softAP(accessPointSSID, accessPointPassword) ? "Ready" : "Failed!");
   delay(3000);
 
-  Serial.print("Setting up Access Point ... ");
+  Serial.print("[WIFI] Setting up Access Point ... ");
   Serial.println(WiFi.softAPConfig(local_IP, gateway, subnet) ? "Ready" : "Failed!");
 
-  Serial.print("IP address = ");
+  Serial.print("[WIFI] IP address = ");
   Serial.println(WiFi.softAPIP());
 };
 
@@ -152,14 +154,14 @@ void sendCurrentStatus()
 {
   String currentStatusParsed = String("{\"type\":\"getData\",\"isDoorOpen\":") + IS_DOOR_OPEN + ",\"isRegistrationMode\":" + IS_REGISTER_MODE + "}";
 
-  Serial.println("Send Current Status to WEB -> " + currentStatusParsed);
+  Serial.println("[WS] Send Current Status to WEB -> " + currentStatusParsed);
 
   webSocket.broadcastTXT(currentStatusParsed);
 };
 
 void handleValidEvents(String Event, bool newStatus)
 {
-  Serial.println("Handling with event of type: " + Event + " with value: " + newStatus);
+  Serial.println("[WS] Handling with event of type: " + Event + " with value: " + newStatus);
 
   if (Event == "isRegistrationMode")
   {
@@ -194,10 +196,10 @@ void onWebSocketEvent(byte clientId, WStype_t eventType, uint8_t *payload, size_
   switch (eventType)
   {
   case WStype_DISCONNECTED:
-    Serial.println("Client with ID" + String(clientId) + " disconnected now!");
+    Serial.println("[WS] Client with ID" + String(clientId) + " disconnected now!");
     break;
   case WStype_CONNECTED:
-    Serial.println("Client with ID " + String(clientId) + " connected now!");
+    Serial.println("[WS] Client with ID " + String(clientId) + " connected now!");
     break;
   case WStype_TEXT:
     StaticJsonDocument<200> doc;
@@ -205,7 +207,7 @@ void onWebSocketEvent(byte clientId, WStype_t eventType, uint8_t *payload, size_
 
     if (error)
     {
-      Serial.print(F("Error on deserialize Json content: "));
+      Serial.print(F("[WS] Error on deserialize Json content: "));
       Serial.println(error.f_str());
       return;
     }
@@ -468,15 +470,15 @@ void addCardToMemory(String cardID)
 
   delay(500);
 
-  UpdateLocalCardsFromMemory();
+  UpdateLocalCardsFromFile();
 
   return setAuthorizedLight();
 }
 
 void upCardsToFile()
 {
-  cardsFile.close();
-  delay(300);
+  // cardsFile.close();
+  // delay(300);
   File saveFile = SPIFFS.open("/savedCards.txt", "w");
   delay(300);
 
@@ -484,8 +486,7 @@ void upCardsToFile()
   {
     if (cards[cardPos] != "")
     {
-      Serial.println("Card to save: " + cards[cardPos]);
-      cardsFile.println(String(cards[cardPos]));
+      saveFile.println(String(cards[cardPos]));
     }
   }
   saveFile.close();
@@ -511,10 +512,10 @@ bool hasNoMemorySpace()
   return false;
 }
 
-void UpdateLocalCardsFromMemory()
+void UpdateLocalCardsFromFile()
 {
   int pos = 0;
-  Serial.println("[FILE] Trying to read file if is available " + String(cardsFile.available()));
+  Serial.println("[FILE] Trying to read file if is available. File size: " + String(cardsFile.available()));
 
   while (cardsFile.available() && pos <= maxCards)
   {
