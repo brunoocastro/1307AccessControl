@@ -2,24 +2,24 @@
 #include <ESPAsyncWebServer.h>
 #include <WebSocketsServer.h>
 #include <ArduinoJson.h>
+#include <EEPROM.h>
 #include <SPIFFS.h>
-#include <SPI.h>       //Biblioteca de comunicação SPI, para comunição do módulo RFID
-#include <MFRC522.h>   //Biblioteca do módulo RFID
-#include <EEPROM.h>    //Biblioteca da memória EEPROM
-#include <MemoryLib.h> //Biblioteca para gerenciar a EEPROM com variáveis
+#include <SPI.h>
+#include <MFRC522.h>
+#include <FS.h>
 
-#define SDA_RFID 5  // SDA do RFID no pino 10
-#define RST_RFID 2  // Reset do RFID no pino 9
-#define ledGreen 22 // Led verde no pino 2
-#define ledRed 13   // Led vermelho no pino 3
-#define relePin 12
+#define SDAPin 5
+#define RSTPin 2
+#define RelayPin 12
 
-MFRC522 mfrc522(SDA_RFID, RST_RFID);   // Inicializa o módulo RFID
-MemoryLib memory(1, 2);                // Inicializa a biblioteca MemoryLib. Parametros: memorySize=1 (1Kb) / type=2 (LONG)
-int maxCards = memory.lastAddress / 2; // Cada cartão ocupa duas posições na memória. Para 1Kb será permitido o cadastro de 101 cartões
-String cards[101] = {};                // Array com os cartões cadastrados
+#define GreenLedPin 22
+#define RedLedPin 13
 
-String UID = "";
+File cardsFile;
+int maxCards = 100;
+String cards[100] = {};
+
+MFRC522 CardReader(SDAPin, RSTPin);
 
 const char *accessPointSSID = "Sala1307";
 const char *accessPointPassword = "Senhasala1307";
@@ -34,19 +34,24 @@ WebSocketsServer webSocket = WebSocketsServer(81);
 bool IS_DOOR_OPEN = true;
 bool IS_REGISTER_MODE = false;
 
-String COMMAND;
-
 void setup()
 {
   Serial.begin(115200);
+  
   delay(500);
 
   initSPIFFS();
   initAccessPoint();
   initWebServer();
+
   delay(500);
+
   initWebSocket();
   initRFID();
+
+  delay(500);
+
+  setDoorOpen();
 };
 
 void loop()
@@ -55,68 +60,31 @@ void loop()
 
   ManageDoorMode(IS_REGISTER_MODE);
   ManageLightMode(IS_DOOR_OPEN, IS_REGISTER_MODE);
-
-  if (Serial.available())
-  {
-    COMMAND = Serial.readStringUntil('\n');
-
-    if (COMMAND.equals("door"))
-    {
-      IS_DOOR_OPEN = !IS_DOOR_OPEN;
-      Serial.print("New door open status");
-      Serial.println(IS_DOOR_OPEN);
-    }
-    else if (COMMAND.equals("register"))
-    {
-      IS_REGISTER_MODE = !IS_REGISTER_MODE;
-      Serial.print("New door open status");
-      Serial.println(IS_REGISTER_MODE);
-    }
-    else if (COMMAND.equals("send"))
-    {
-      Serial.println("Sending info:");
-      sendCurrentStatus();
-    }
-    else
-    {
-      Serial.println("Invalid command");
-    }
-  }
 };
 
 void initRFID()
 {
-  // Configura os pinos
-  pinMode(ledGreen, OUTPUT);
-  pinMode(ledRed, OUTPUT);
-  pinMode(relePin, OUTPUT);
+  pinMode(GreenLedPin, OUTPUT);
+  pinMode(RedLedPin, OUTPUT);
+  pinMode(RelayPin, OUTPUT);
 
-  digitalWrite(ledGreen, LOW);
-  digitalWrite(ledRed, LOW);
-  digitalWrite(relePin, LOW);
+  digitalWrite(GreenLedPin, LOW);
+  digitalWrite(RedLedPin, LOW);
+  digitalWrite(RelayPin, LOW);
 
-  // Inicia SPI
   SPI.begin();
 
-  // Inicia o modulo RFID MFRC522
-  mfrc522.PCD_Init();
+  CardReader.PCD_Init();
 
-  // Retorna os cartões armazenados na memória EEPROM para o array
   UpdateLocalCardsFromMemory();
 
-  //! DEBUG -> Deletar as linhas abaixo: Elas forçam a adição das tags no array
-  // memory.write(0, long(14534186121));
-  // cards[0] = String(14534186121);
-  // Serial.println("CARD:" + cards[0]);
-
-  // Pisca os leds sinalizando a inicialização do circuito
   for (int i = 0; i < 10; i++)
   {
-    digitalWrite(ledRed, HIGH);
-    digitalWrite(ledGreen, HIGH);
+    digitalWrite(RedLedPin, HIGH);
+    digitalWrite(GreenLedPin, HIGH);
     delay(50);
-    digitalWrite(ledRed, LOW);
-    digitalWrite(ledGreen, LOW);
+    digitalWrite(RedLedPin, LOW);
+    digitalWrite(GreenLedPin, LOW);
     delay(50);
   }
 }
@@ -127,8 +95,19 @@ void initSPIFFS()
   {
     Serial.println("Cannot mount SPIFFS volume... Restarting in 5 seconds!");
     delay(5000);
-    ESP.restart();
+    return ESP.restart();
   }
+
+  cardsFile = SPIFFS.open("/savedCards.txt", "r");
+  delay(300);
+
+  if (!cardsFile)
+  {
+    Serial.println("[FILE] Error opening file.");
+    return ESP.restart();
+  }
+
+  Serial.println("[FILE] - Successfully opened cards file.");
 };
 
 void initAccessPoint()
@@ -152,9 +131,8 @@ void initAccessPoint()
 
 void initWebServer()
 {
-  webServer.on("/", HTTP_GET, [](AsyncWebServerRequest *request) { // define here wat the webserver needs to do
-    request->send(SPIFFS, "/webpage.html", "text/html");
-  });
+  webServer.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+               { request->send(SPIFFS, "/webpage.html", "text/html"); });
 
   webServer.onNotFound([](AsyncWebServerRequest *request)
                        { request->send(404, "text/plain", "Not found. Just '/' endpoint exists!"); });
@@ -241,20 +219,22 @@ void onWebSocketEvent(byte clientId, WStype_t eventType, uint8_t *payload, size_
 
 bool hasCardToRead()
 {
-  return (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial());
+  return (CardReader.PICC_IsNewCardPresent() == true && CardReader.PICC_ReadCardSerial() == true);
 }
 
-void ReadCardUID()
+String ReadCardUID()
 {
-  UID = "";
+  String foundCard = "";
   if (hasCardToRead())
   {
-    for (byte i = 0; i < mfrc522.uid.size; i++)
+    for (byte i = 0; i < CardReader.uid.size; i++)
     {
-      UID += String(mfrc522.uid.uidByte[i]);
+      foundCard += String(CardReader.uid.uidByte[i]);
     }
-    Serial.println("[READ] Card Readed with UID: " + String(UID));
+    Serial.println("[READ] Found card with UID: " + String(foundCard));
+    delay(200);
   }
+  return foundCard;
 }
 
 void setProgrammingState()
@@ -276,7 +256,7 @@ void setReadingState()
 void setDoorOpen()
 {
   Serial.println("[DOOR] Door is OPEN now!");
-  digitalWrite(relePin, HIGH);
+  digitalWrite(RelayPin, HIGH);
   IS_DOOR_OPEN = true;
 
   delay(350);
@@ -286,7 +266,7 @@ void setDoorOpen()
 void setDoorClosed()
 {
   Serial.println("[DOOR] Door is CLOSED now!");
-  digitalWrite(relePin, LOW);
+  digitalWrite(RelayPin, LOW);
   IS_DOOR_OPEN = false;
 
   delay(350);
@@ -295,35 +275,35 @@ void setDoorClosed()
 
 void setOpenLight()
 {
-  digitalWrite(ledGreen, HIGH);
-  digitalWrite(ledRed, LOW);
+  digitalWrite(GreenLedPin, HIGH);
+  digitalWrite(RedLedPin, LOW);
 }
 
 void setClosedLight()
 {
-  digitalWrite(ledRed, HIGH);
-  digitalWrite(ledGreen, LOW);
+  digitalWrite(RedLedPin, HIGH);
+  digitalWrite(GreenLedPin, LOW);
 }
 
 void setProgrammingLight()
 {
-  digitalWrite(ledRed, HIGH);
-  digitalWrite(ledGreen, LOW);
+  digitalWrite(RedLedPin, HIGH);
+  digitalWrite(GreenLedPin, LOW);
   delay(500);
-  digitalWrite(ledGreen, HIGH);
-  digitalWrite(ledRed, LOW);
+  digitalWrite(GreenLedPin, HIGH);
+  digitalWrite(RedLedPin, LOW);
   delay(500);
 }
 
 void setUnauthorizedLight()
 {
-  digitalWrite(ledGreen, LOW);
-  digitalWrite(ledRed, LOW);
+  digitalWrite(GreenLedPin, LOW);
+  digitalWrite(RedLedPin, LOW);
   for (int i = 0; i < 6; i++)
   {
-    digitalWrite(ledRed, HIGH);
+    digitalWrite(RedLedPin, HIGH);
     delay(150);
-    digitalWrite(ledRed, LOW);
+    digitalWrite(RedLedPin, LOW);
     delay(150);
   }
   delay(500);
@@ -331,13 +311,13 @@ void setUnauthorizedLight()
 
 void setAuthorizedLight()
 {
-  digitalWrite(ledGreen, LOW);
-  digitalWrite(ledRed, LOW);
+  digitalWrite(GreenLedPin, LOW);
+  digitalWrite(RedLedPin, LOW);
   for (int i = 0; i < 6; i++)
   {
-    digitalWrite(ledGreen, HIGH);
+    digitalWrite(GreenLedPin, HIGH);
     delay(150);
-    digitalWrite(ledGreen, LOW);
+    digitalWrite(GreenLedPin, LOW);
     delay(150);
   }
   delay(500);
@@ -368,22 +348,22 @@ void ManageDoorMode(bool isProgrammingMode)
 
 void handleReadingMode()
 {
-  ReadCardUID();
+  String currentReadCard = ReadCardUID();
 
-  if (UID != "")
+  if (currentReadCard != "")
   {
-    Serial.println("[ACCESS] Trying to access with card UID: " + String(UID));
+    Serial.println("[ACCESS] Trying to access with card UID: " + String(currentReadCard));
 
-    boolean canAccess = hasCardInLocalMemory(UID);
+    boolean canAccess = hasCardInLocalMemory(currentReadCard);
 
     if (canAccess)
     {
-      Serial.println("[AUTHORIZED] Access GRANTED with UID: " + String(UID));
+      Serial.println("[AUTHORIZED] Access GRANTED with UID: " + String(currentReadCard));
       toggleDoorStatus();
       return setAuthorizedLight();
     }
 
-    Serial.println("[UNAUTHORIZED] Access DENIED with UID: " + String(UID));
+    Serial.println("[UNAUTHORIZED] Access DENIED with UID: " + String(currentReadCard));
     return setUnauthorizedLight();
   }
 }
@@ -400,32 +380,32 @@ void toggleDoorStatus()
 
 void handleProgrammingMode()
 {
-  UID = "";
+  String ReadCard = "";
 
   Serial.println("[REGISTER] Waiting read a card to add/remove");
 
   for (int times = 0; times < 100; times++)
   {
-    digitalWrite(ledGreen, LOW);
-    digitalWrite(ledRed, HIGH);
+    digitalWrite(GreenLedPin, LOW);
+    digitalWrite(RedLedPin, HIGH);
     delay(10);
-    digitalWrite(ledGreen, HIGH);
-    digitalWrite(ledRed, LOW);
+    digitalWrite(GreenLedPin, HIGH);
+    digitalWrite(RedLedPin, LOW);
 
-    ReadCardUID();
-    if (UID == "")
+    ReadCard = ReadCardUID();
+    if (ReadCard == "")
       continue;
 
     break;
   }
 
-  if (UID == "")
+  if (ReadCard == "")
   {
     Serial.println("[REGISTER] No card read!");
   }
-  else if (hasCardInLocalMemory(UID))
+  else if (hasCardInLocalMemory(ReadCard))
   {
-    deleteCardFromMemory(UID);
+    deleteCardFromMemory(ReadCard);
   }
   else if (hasNoMemorySpace())
   {
@@ -433,11 +413,11 @@ void handleProgrammingMode()
   }
   else
   {
-    addCardToMemory(UID);
+    addCardToMemory(ReadCard);
   }
 
-  digitalWrite(ledGreen, LOW);
-  digitalWrite(ledRed, LOW);
+  digitalWrite(GreenLedPin, LOW);
+  digitalWrite(RedLedPin, LOW);
 
   Serial.println("[REGISTER] Finish. Returning to Reading state!");
   return setReadingState();
@@ -448,23 +428,21 @@ bool hasCardInLocalMemory(String cardID)
   boolean hasCard = false;
   for (int c = 0; c < maxCards; c++)
   {
-    if (UID == cards[c])
+    if (cardID == cards[c])
     {
       hasCard = true;
       break;
     }
   }
 
-  if (hasCard)
-    return true;
-  return false;
+  return hasCard == true;
 }
 
 void deleteCardFromMemory(String cardID)
 {
   for (int memPOS = 0; memPOS < maxCards; memPOS++)
   {
-    if (cards[memPOS] == UID)
+    if (cards[memPOS] == cardID)
     {
       cards[memPOS] = "";
       setUnauthorizedLight();
@@ -477,35 +455,55 @@ void addCardToMemory(String cardID)
   Serial.println("[REGISTER] Adding new access to local memory!");
   for (int cleanMemPosition = 0; cleanMemPosition < maxCards; cleanMemPosition++)
   {
-    if (cards[cleanMemPosition].toInt() == 0)
+    if (cards[cleanMemPosition] == "")
     {
-      Serial.println("[MEMORY] Saving new card of UID " + String(UID) + " in memory position " + cleanMemPosition);
-      cards[cleanMemPosition] = UID;
+      Serial.println("[MEMORY] Saving new card of UID " + String(cardID) + " in memory position " + cleanMemPosition);
+      cards[cleanMemPosition] = cardID;
 
       break;
     }
   }
 
-  printAllCards();
+  upCardsToFile();
 
-  // TODO -> SALVAR NA EEPROM AQUI
+  delay(500);
 
-  // TODO -> Após salvar na EEPROM, atualizar os cards da memória com a EEPROM para ficar SYNCADO
-  // UpdateLocalCardsFromMemory()
+  UpdateLocalCardsFromMemory();
 
   return setAuthorizedLight();
 }
 
+void upCardsToFile()
+{
+  cardsFile.close();
+  delay(300);
+  File saveFile = SPIFFS.open("/savedCards.txt", "w");
+  delay(300);
+
+  for (int cardPos = 0; cardPos <= maxCards; cardPos++)
+  {
+    if (cards[cardPos] != "")
+    {
+      Serial.println("Card to save: " + cards[cardPos]);
+      cardsFile.println(String(cards[cardPos]));
+    }
+  }
+  saveFile.close();
+  delay(300);
+  cardsFile = SPIFFS.open("/savedCards.txt", "r");
+  delay(300);
+}
+
 bool hasNoMemorySpace()
 {
-  if (cards[maxCards - 1].toInt() != 0)
+  if (cards[maxCards - 1] != "")
   {
-    digitalWrite(ledGreen, LOW);
-    for (int i = 0; i < 15; i++)
+    digitalWrite(GreenLedPin, LOW);
+    for (int i = 0; i < 30; i++)
     {
-      digitalWrite(ledRed, HIGH);
+      digitalWrite(RedLedPin, HIGH);
       delay(100);
-      digitalWrite(ledRed, LOW);
+      digitalWrite(RedLedPin, LOW);
       delay(100);
     }
     return true;
@@ -515,28 +513,23 @@ bool hasNoMemorySpace()
 
 void UpdateLocalCardsFromMemory()
 {
-  int memPos = 0;
-  for (int iter = 0; iter < maxCards; iter++)
-  {
-    Serial.println(memory.read(memPos));
-    Serial.println(memory.read(memPos + 1));
-    String readUID = String(memory.read(memPos)) + String(memory.read(memPos + 1));
-    Serial.println("[MEMORY] Inserting card with UID [" + readUID + "] in local memory at pos :" + iter);
-    cards[iter] = readUID;
-    memPos += 2;
-  }
-}
+  int pos = 0;
+  Serial.println("[FILE] Trying to read file if is available " + String(cardsFile.available()));
 
-void printAllCards()
-{
-  int founded = 0;
-  for (int memPosition = 0; memPosition < maxCards; memPosition++)
+  while (cardsFile.available() && pos <= maxCards)
   {
-    if (cards[memPosition].toInt() != 0)
+    String cardUIDFromFile = "";
+
+    cardUIDFromFile = cardsFile.readStringUntil('\n');
+    cardUIDFromFile = cardUIDFromFile.substring(0, cardUIDFromFile.length() - 1);
+
+    if (cardUIDFromFile != "")
     {
-      founded += 1;
-      Serial.println("[MEMORY] Card founded in position" + String(memPosition) + " with ID " + cards[memPosition]);
+      Serial.println("[FILE] Card found in register file: " + cardUIDFromFile + ". Saving in local memory at position: " + String(pos));
     }
+
+    cards[pos] = String(cardUIDFromFile);
+    pos += 1;
+    delay(15);
   }
-  Serial.println("[MEMORY] Founded Cards: " + founded);
 }
